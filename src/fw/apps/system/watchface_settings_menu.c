@@ -29,9 +29,19 @@ typedef struct {
   GColor8 color;
 } ColorEntry;
 
-static const ColorEntry s_color_palette[] = {
+// BW-only palette: just black and white (safe for text rendering on all platforms)
+static const ColorEntry s_bw_palette[] = {
   { "Black",          { .argb = GColorBlackARGB8 } },
   { "White",          { .argb = GColorWhiteARGB8 } },
+};
+
+// Full palette: all available colors for the platform
+static const ColorEntry s_full_palette[] = {
+  { "Black",          { .argb = GColorBlackARGB8 } },
+  { "White",          { .argb = GColorWhiteARGB8 } },
+  { "Light Gray",     { .argb = GColorLightGrayARGB8 } },
+  { "Dark Gray",      { .argb = GColorDarkGrayARGB8 } },
+#if PBL_COLOR
   { "Red",            { .argb = GColorRedARGB8 } },
   { "Dark Red",       { .argb = GColorDarkCandyAppleRedARGB8 } },
   { "Orange",         { .argb = GColorOrangeARGB8 } },
@@ -50,11 +60,19 @@ static const ColorEntry s_color_palette[] = {
   { "Sunset Orange",  { .argb = GColorSunsetOrangeARGB8 } },
   { "Lavender",       { .argb = GColorLavenderIndigoARGB8 } },
   { "Mint Green",     { .argb = GColorMintGreenARGB8 } },
-  { "Light Gray",     { .argb = GColorLightGrayARGB8 } },
-  { "Dark Gray",      { .argb = GColorDarkGrayARGB8 } },
+#endif
 };
 
-#define NUM_COLORS ARRAY_LENGTH(s_color_palette)
+static void prv_get_palette(WatchfaceSettingColorPalette palette_type,
+                            const ColorEntry **entries, uint16_t *count) {
+  if (palette_type == WatchfaceSettingColorPalette_BW) {
+    *entries = s_bw_palette;
+    *count = ARRAY_LENGTH(s_bw_palette);
+  } else {
+    *entries = s_full_palette;
+    *count = ARRAY_LENGTH(s_full_palette);
+  }
+}
 
 // Context for the main settings menu
 typedef struct {
@@ -70,6 +88,8 @@ typedef struct {
 typedef struct {
   WatchfaceSettingsMenuData *parent;
   uint8_t setting_index;
+  const ColorEntry *palette;
+  uint16_t palette_count;
 } ColorPickerContext;
 
 // Context for the number picker
@@ -95,9 +115,10 @@ static status_t prv_persist_write(const Uuid *uuid, uint32_t key,
   return result;
 }
 
-static int prv_color_to_palette_index(GColor8 color) {
-  for (size_t i = 0; i < NUM_COLORS; i++) {
-    if (s_color_palette[i].color.argb == color.argb) {
+static int prv_color_to_palette_index(GColor8 color, const ColorEntry *palette,
+                                      uint16_t palette_count) {
+  for (uint16_t i = 0; i < palette_count; i++) {
+    if (palette[i].color.argb == color.argb) {
       return (int)i;
     }
   }
@@ -113,21 +134,23 @@ static void prv_color_select(OptionMenu *option_menu, int selection, void *conte
   WatchfaceSettingsMenuData *data = ctx->parent;
   const WatchfaceSetting *setting = &data->settings[ctx->setting_index];
 
-  GColor8 color = s_color_palette[selection].color;
+  GColor8 color = ctx->palette[selection].color;
   prv_persist_write(&data->uuid, setting->persist_key, &color, sizeof(color));
 
   app_window_stack_remove(&option_menu->window, true);
 }
 
 static uint16_t prv_color_get_num_rows(OptionMenu *option_menu, void *context) {
-  return NUM_COLORS;
+  ColorPickerContext *ctx = context;
+  return ctx->palette_count;
 }
 
 static void prv_color_draw_row(OptionMenu *option_menu, GContext *ctx, const Layer *cell_layer,
                                 const GRect *text_frame, uint32_t row, bool selected,
                                 void *context) {
+  ColorPickerContext *picker_ctx = context;
   option_menu_system_draw_row(option_menu, ctx, cell_layer, text_frame,
-                              s_color_palette[row].name, selected, context);
+                              picker_ctx->palette[row].name, selected, context);
 }
 
 static void prv_color_unload(OptionMenu *option_menu, void *context) {
@@ -139,7 +162,8 @@ static void prv_color_unload(OptionMenu *option_menu, void *context) {
 static void prv_color_selection_will_change(OptionMenu *option_menu, uint16_t new_row,
                                              uint16_t old_row, void *context) {
   if (new_row != old_row) {
-    GColor color = (GColor)s_color_palette[new_row].color;
+    ColorPickerContext *ctx = context;
+    GColor color = (GColor)ctx->palette[new_row].color;
     option_menu_set_highlight_colors(option_menu, color, gcolor_legible_over(color));
   }
 }
@@ -147,18 +171,22 @@ static void prv_color_selection_will_change(OptionMenu *option_menu, uint16_t ne
 static void prv_push_color_picker(WatchfaceSettingsMenuData *data, uint8_t setting_index) {
   const WatchfaceSetting *setting = &data->settings[setting_index];
 
+  const ColorEntry *palette;
+  uint16_t palette_count;
+  prv_get_palette(setting->color.palette, &palette, &palette_count);
+
   // Read current value
-  GColor8 current_color = setting->default_color;
+  GColor8 current_color = setting->color.default_color;
   prv_persist_read(&data->uuid, setting->persist_key, &current_color, sizeof(current_color));
 
-  int current_index = prv_color_to_palette_index(current_color);
+  int current_index = prv_color_to_palette_index(current_color, palette, palette_count);
 
   OptionMenu *option_menu = option_menu_create();
   if (!option_menu) {
     return;
   }
 
-  GColor highlight_color = (GColor)s_color_palette[current_index].color;
+  GColor highlight_color = (GColor)palette[current_index].color;
   const OptionMenuConfig config = {
     .title = setting->name,
     .content_type = OptionMenuContentType_SingleLine,
@@ -173,6 +201,8 @@ static void prv_push_color_picker(WatchfaceSettingsMenuData *data, uint8_t setti
   *ctx = (ColorPickerContext) {
     .parent = data,
     .setting_index = setting_index,
+    .palette = palette,
+    .palette_count = palette_count,
   };
 
   OptionMenuCallbacks callbacks = {
@@ -258,10 +288,13 @@ static void prv_menu_draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex 
   // Build subtitle showing current value
   char subtitle[32] = "";
   if (setting->type == WatchfaceSettingType_Color) {
-    GColor8 color = setting->default_color;
+    GColor8 color = setting->color.default_color;
     prv_persist_read(&data->uuid, setting->persist_key, &color, sizeof(color));
-    int idx = prv_color_to_palette_index(color);
-    strncpy(subtitle, s_color_palette[idx].name, sizeof(subtitle) - 1);
+    const ColorEntry *palette;
+    uint16_t palette_count;
+    prv_get_palette(setting->color.palette, &palette, &palette_count);
+    int idx = prv_color_to_palette_index(color, palette, palette_count);
+    strncpy(subtitle, palette[idx].name, sizeof(subtitle) - 1);
   } else if (setting->type == WatchfaceSettingType_Number) {
     int32_t value = setting->number.min;
     prv_persist_read(&data->uuid, setting->persist_key, &value, sizeof(value));

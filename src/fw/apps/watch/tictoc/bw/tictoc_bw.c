@@ -117,13 +117,15 @@ static void prv_init(void) {
       .name = "Background Color",
       .persist_key = SETTING_KEY_BG_COLOR,
       .type = WatchfaceSettingType_Color,
-      .default_color = { .argb = GColorBlackARGB8 },
+      .color = { .default_color = { .argb = GColorBlackARGB8 },
+                 .palette = WatchfaceSettingColorPalette_Full },
     },
     {
       .name = "Text Color",
       .persist_key = SETTING_KEY_TEXT_COLOR,
       .type = WatchfaceSettingType_Color,
-      .default_color = { .argb = GColorWhiteARGB8 },
+      .color = { .default_color = { .argb = GColorWhiteARGB8 },
+                 .palette = WatchfaceSettingColorPalette_BW },
     },
   };
   watchface_settings_declare(settings, ARRAY_LENGTH(settings));

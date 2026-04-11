@@ -10,7 +10,7 @@
 #include <string.h>
 
 typedef struct {
-  WatchfaceSetting settings[WATCHFACE_SETTINGS_MAX];
+  WatchfaceSetting *settings;
   uint8_t num_settings;
   Uuid uuid;
   bool has_settings;
@@ -30,6 +30,13 @@ void watchface_settings_service_set(const WatchfaceSetting *settings, uint8_t nu
     num_settings = WATCHFACE_SETTINGS_MAX;
   }
 
+  // Free any previous allocation
+  if (s_state.settings) {
+    kernel_free(s_state.settings);
+    s_state.settings = NULL;
+  }
+
+  s_state.settings = kernel_malloc_check(num_settings * sizeof(WatchfaceSetting));
   memcpy(s_state.settings, settings, num_settings * sizeof(WatchfaceSetting));
   s_state.num_settings = num_settings;
   s_state.uuid = *uuid;
@@ -43,6 +50,10 @@ void watchface_settings_service_set(const WatchfaceSetting *settings, uint8_t nu
 }
 
 void watchface_settings_service_clear(void) {
+  if (s_state.settings) {
+    kernel_free(s_state.settings);
+    s_state.settings = NULL;
+  }
   s_state.has_settings = false;
   s_state.num_settings = 0;
 

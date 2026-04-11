@@ -147,13 +147,15 @@ static void prv_init() {
       .name = "Background Color",
       .persist_key = SETTING_KEY_BG_COLOR,
       .type = WatchfaceSettingType_Color,
-      .default_color = { .argb = GColorBlackARGB8 },
+      .color = { .default_color = { .argb = GColorBlackARGB8 },
+                 .palette = WatchfaceSettingColorPalette_Full },
     },
     {
       .name = "Hour Hand Color",
       .persist_key = SETTING_KEY_HAND_COLOR,
       .type = WatchfaceSettingType_Color,
-      .default_color = { .argb = PBL_IF_COLOR_ELSE(GColorRedARGB8, GColorWhiteARGB8) },
+      .color = { .default_color = { .argb = PBL_IF_COLOR_ELSE(GColorRedARGB8, GColorWhiteARGB8) },
+                 .palette = WatchfaceSettingColorPalette_Full },
     },
   };
   watchface_settings_declare(settings, ARRAY_LENGTH(settings));

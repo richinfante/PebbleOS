@@ -36,6 +36,22 @@ typedef enum {
   WatchfaceSettingType_Number = 1,
 } WatchfaceSettingType;
 
+//! Color palette selection for color-type settings
+typedef enum {
+  //! Full palette: all colors on color platforms, B&W + grays on BW platforms.
+  //! Suitable for backgrounds and fills that support dithered rendering.
+  WatchfaceSettingColorPalette_Full = 0,
+  //! Strict B&W only: black and white on all platforms.
+  //! Use for text/fonts where dithered grays are not supported.
+  WatchfaceSettingColorPalette_BW = 1,
+} WatchfaceSettingColorPalette;
+
+//! Configuration for a color-type setting
+typedef struct {
+  GColor8 default_color;
+  WatchfaceSettingColorPalette palette;
+} WatchfaceSettingColorConfig;
+
 //! Configuration for a number-type setting
 typedef struct {
   int32_t min;
@@ -55,8 +71,8 @@ typedef struct {
   union {
     //! Configuration for WatchfaceSettingType_Number
     WatchfaceSettingNumberConfig number;
-    //! Default color for WatchfaceSettingType_Color (used if no value persisted yet)
-    GColor8 default_color;
+    //! Configuration for WatchfaceSettingType_Color
+    WatchfaceSettingColorConfig color;
   };
 } WatchfaceSetting;
 
