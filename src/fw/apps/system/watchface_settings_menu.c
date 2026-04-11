@@ -5,6 +5,9 @@
 
 #include "applib/graphics/graphics.h"
 #include "applib/ui/app_window_stack.h"
+#include "applib/ui/dialogs/actionable_dialog.h"
+#include "applib/ui/dialogs/confirmation_dialog.h"
+#include "applib/ui/dialogs/dialog.h"
 #include "applib/ui/menu_layer.h"
 #include "applib/ui/number_window.h"
 #include "applib/ui/option_menu_window.h"
@@ -12,6 +15,7 @@
 #include "applib/ui/window.h"
 #include "applib/watchface_settings.h"
 #include "kernel/pbl_malloc.h"
+#include "resource/resource_ids.auto.h"
 #include "services/common/i18n/i18n.h"
 #include "services/normal/persist.h"
 #include "services/normal/settings/settings_file.h"
@@ -98,11 +102,19 @@ typedef struct {
   uint8_t setting_index;
 } NumberPickerContext;
 
-// Helper: read a persist value for the watchface by UUID and key
+// Helper: read a persist value for the watchface by UUID and key.
+// On failure (key not found), val is left unchanged so callers can pre-fill a default.
 static status_t prv_persist_read(const Uuid *uuid, uint32_t key, void *val, size_t val_size) {
+  uint8_t buf[sizeof(int32_t)];
+  if (val_size > sizeof(buf)) {
+    return E_INVALID_ARGUMENT;
+  }
   SettingsFile *store = persist_service_lock_and_get_store(uuid);
-  status_t result = settings_file_get(store, &key, sizeof(key), val, val_size);
+  status_t result = settings_file_get(store, &key, sizeof(key), buf, val_size);
   persist_service_unlock_store(store);
+  if (result == S_SUCCESS) {
+    memcpy(val, buf, val_size);
+  }
   return result;
 }
 
@@ -145,11 +157,40 @@ static uint16_t prv_color_get_num_rows(OptionMenu *option_menu, void *context) {
   return ctx->palette_count;
 }
 
+#define COLOR_SWATCH_SIZE 18
+#define COLOR_SWATCH_CORNER_RADIUS 3
+#define COLOR_SWATCH_TEXT_PAD 6
+
 static void prv_color_draw_row(OptionMenu *option_menu, GContext *ctx, const Layer *cell_layer,
                                 const GRect *text_frame, uint32_t row, bool selected,
                                 void *context) {
   ColorPickerContext *picker_ctx = context;
-  option_menu_system_draw_row(option_menu, ctx, cell_layer, text_frame,
+  GColor swatch_color = (GColor)picker_ctx->palette[row].color;
+
+  // Draw a color swatch at the left edge of the text frame, vertically centered
+  GRect swatch_rect = {
+    .origin = { .x = text_frame->origin.x,
+                .y = text_frame->origin.y +
+                     (text_frame->size.h - COLOR_SWATCH_SIZE) / 2 },
+    .size = { .w = COLOR_SWATCH_SIZE, .h = COLOR_SWATCH_SIZE },
+  };
+
+  // Fill with the color
+  graphics_context_set_fill_color(ctx, swatch_color);
+  graphics_fill_round_rect(ctx, &swatch_rect, COLOR_SWATCH_CORNER_RADIUS, GCornersAll);
+
+  // Draw a border so the swatch is visible even on matching backgrounds
+  GColor border_color = selected ? GColorWhite : GColorBlack;
+  graphics_context_set_stroke_color(ctx, border_color);
+  graphics_draw_round_rect(ctx, &swatch_rect, COLOR_SWATCH_CORNER_RADIUS);
+
+  // Draw text to the right of the swatch
+  GRect label_frame = *text_frame;
+  int16_t shift = COLOR_SWATCH_SIZE + COLOR_SWATCH_TEXT_PAD;
+  label_frame.origin.x += shift;
+  label_frame.size.w -= shift;
+
+  option_menu_system_draw_row(option_menu, ctx, cell_layer, &label_frame,
                               picker_ctx->palette[row].name, selected, context);
 }
 
@@ -157,15 +198,6 @@ static void prv_color_unload(OptionMenu *option_menu, void *context) {
   ColorPickerContext *ctx = context;
   option_menu_destroy(option_menu);
   task_free(ctx);
-}
-
-static void prv_color_selection_will_change(OptionMenu *option_menu, uint16_t new_row,
-                                             uint16_t old_row, void *context) {
-  if (new_row != old_row) {
-    ColorPickerContext *ctx = context;
-    GColor color = (GColor)ctx->palette[new_row].color;
-    option_menu_set_highlight_colors(option_menu, color, gcolor_legible_over(color));
-  }
 }
 
 static void prv_push_color_picker(WatchfaceSettingsMenuData *data, uint8_t setting_index) {
@@ -186,13 +218,13 @@ static void prv_push_color_picker(WatchfaceSettingsMenuData *data, uint8_t setti
     return;
   }
 
-  GColor highlight_color = (GColor)palette[current_index].color;
+  GColor highlight = shell_prefs_get_theme_highlight_color();
   const OptionMenuConfig config = {
     .title = setting->name,
     .content_type = OptionMenuContentType_SingleLine,
     .choice = current_index,
     .status_colors = { GColorWhite, GColorBlack },
-    .highlight_colors = { highlight_color, gcolor_legible_over(highlight_color) },
+    .highlight_colors = { highlight, gcolor_legible_over(highlight) },
     .icons_enabled = true,
   };
   option_menu_configure(option_menu, &config);
@@ -210,7 +242,6 @@ static void prv_push_color_picker(WatchfaceSettingsMenuData *data, uint8_t setti
     .get_num_rows = prv_color_get_num_rows,
     .draw_row = prv_color_draw_row,
     .unload = prv_color_unload,
-    .selection_will_change = prv_color_selection_will_change,
   };
   option_menu_set_callbacks(option_menu, &callbacks, ctx);
 
@@ -261,14 +292,61 @@ static void prv_push_number_picker(WatchfaceSettingsMenuData *data, uint8_t sett
 }
 
 /////////////////////////////
+// Reset to Defaults confirmation
+/////////////////////////////
+
+static void prv_reset_confirm_cb(ClickRecognizerRef recognizer, void *context) {
+  ConfirmationDialog *dialog = (ConfirmationDialog *)context;
+  WatchfaceSettingsMenuData *data =
+      (WatchfaceSettingsMenuData *)actionable_dialog_get_user_data(
+          (ActionableDialog *)dialog);
+
+  // Delete all persisted setting values
+  SettingsFile *store = persist_service_lock_and_get_store(&data->uuid);
+  for (uint8_t i = 0; i < data->num_settings; i++) {
+    uint32_t key = data->settings[i].persist_key;
+    settings_file_delete(store, &key, sizeof(key));
+  }
+  persist_service_unlock_store(store);
+
+  confirmation_dialog_pop(dialog);
+}
+
+static void prv_reset_decline_cb(ClickRecognizerRef recognizer, void *context) {
+  confirmation_dialog_pop((ConfirmationDialog *)context);
+}
+
+static void prv_reset_click_config(void *context) {
+  window_single_click_subscribe(BUTTON_ID_UP, prv_reset_confirm_cb);
+  window_single_click_subscribe(BUTTON_ID_DOWN, prv_reset_decline_cb);
+  window_single_click_subscribe(BUTTON_ID_BACK, prv_reset_decline_cb);
+}
+
+static void prv_push_reset_confirmation(WatchfaceSettingsMenuData *data) {
+  ConfirmationDialog *dialog = confirmation_dialog_create("Reset Settings");
+  Dialog *d = confirmation_dialog_get_dialog(dialog);
+  dialog_set_text(d, "Reset all settings to defaults?");
+  dialog_set_background_color(d, GColorRed);
+  dialog_set_text_color(d, GColorWhite);
+  dialog_set_icon(d, RESOURCE_ID_GENERIC_WARNING_SMALL);
+
+  actionable_dialog_set_user_data((ActionableDialog *)dialog, data);
+  confirmation_dialog_set_click_config_provider(dialog, prv_reset_click_config);
+  app_confirmation_dialog_push(dialog);
+}
+
+/////////////////////////////
 // Main settings menu callbacks
 /////////////////////////////
 
 static uint16_t prv_menu_get_num_rows(MenuLayer *menu_layer, uint16_t section_index,
                                        void *context) {
   WatchfaceSettingsMenuData *data = context;
-  // Always show at least one row (info row when no settings declared)
-  return (data->num_settings > 0) ? data->num_settings : 1;
+  if (data->num_settings == 0) {
+    return 1; // info row
+  }
+  // Settings rows + "Reset to Defaults" row
+  return data->num_settings + 1;
 }
 
 static void prv_menu_draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index,
@@ -280,6 +358,12 @@ static void prv_menu_draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex 
                          "No settings available",
                          "Watchface has not declared any",
                          NULL);
+    return;
+  }
+
+  // "Reset to Defaults" is the last row
+  if (cell_index->row == data->num_settings) {
+    menu_cell_basic_draw(ctx, cell_layer, "Reset to Defaults", NULL, NULL);
     return;
   }
 
@@ -309,8 +393,14 @@ static void prv_menu_select_click(MenuLayer *menu_layer, MenuIndex *cell_index, 
   if (data->num_settings == 0) {
     return;
   }
-  const WatchfaceSetting *setting = &data->settings[cell_index->row];
 
+  // Last row is "Reset to Defaults"
+  if (cell_index->row == data->num_settings) {
+    prv_push_reset_confirmation(data);
+    return;
+  }
+
+  const WatchfaceSetting *setting = &data->settings[cell_index->row];
   switch (setting->type) {
     case WatchfaceSettingType_Color:
       prv_push_color_picker(data, cell_index->row);
