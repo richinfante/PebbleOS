@@ -44,6 +44,7 @@
 #endif
 #include "services/normal/app_inbox_service.h"
 #include "services/normal/app_outbox_service.h"
+#include "services/normal/watchface_settings_service.h"
 #include "shell/normal/app_idle_timeout.h"
 #include "shell/normal/watchface.h"
 #include "shell/shell.h"
@@ -396,6 +397,12 @@ static bool prv_app_start(const PebbleProcessMd *app_md, const void *args,
     PBL_ANALYTICS_SET_STRING(watchface_uuid, uuid_str);
   }
 #endif
+
+  // Clear previous watchface settings declarations when a new watchface starts.
+  // The new watchface will re-declare its settings if it has any.
+  if (app_md->process_type == ProcessTypeWatchface) {
+    watchface_settings_service_clear();
+  }
 
 #if !defined(RECOVERY_FW)
   health_tracking_ui_register_app_launch(s_app_task_context.install_id);

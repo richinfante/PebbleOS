@@ -2,17 +2,24 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "applib/app.h"
+#include "applib/persist.h"
 #include "applib/tick_timer_service.h"
 #include "applib/ui/ui.h"
 #include "applib/unobstructed_area_service.h"
+#include "applib/watchface_settings.h"
 #include "kernel/pbl_malloc.h"
 #include "process_state/app_state/app_state.h"
 #include "services/common/clock.h"
 #include "services/common/i18n/i18n.h"
+#include "util/size.h"
 #include "util/time/time.h"
 
 #include <locale.h>
 #include <string.h>
+
+// Persist keys for watchface settings
+#define SETTING_KEY_BG_COLOR     1
+#define SETTING_KEY_TEXT_COLOR   2
 
 typedef struct {
   Window window;
@@ -21,9 +28,12 @@ typedef struct {
   Layer line_layer;
   char time_text[6];
   char date_text[13];
+  GColor bg_color;
+  GColor text_color;
 } TicTocData;
 
 static void prv_line_layer_update_callback(Layer *me, GContext* ctx) {
+  TicTocData *data = app_state_get_user_data();
   GRect bounds;
   layer_get_bounds(me, &bounds);
   GRect unobstructed_bounds;
@@ -34,7 +44,7 @@ static void prv_line_layer_update_callback(Layer *me, GContext* ctx) {
   int16_t extra_shift = obstruction > 0 ? 10 : 0;
   int16_t line_y = 97 - obstruction + extra_shift;
 
-  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_color(ctx, data->text_color);
   graphics_draw_line(ctx, GPoint(8, line_y), GPoint(131, line_y));
   graphics_draw_line(ctx, GPoint(8, line_y + 1), GPoint(131, line_y + 1));
 }
@@ -101,17 +111,49 @@ static void prv_init(void) {
   app_state_set_user_data(data);
   setlocale(LC_ALL, "");
 
+  // Declare watchface settings
+  const WatchfaceSetting settings[] = {
+    {
+      .name = "Background Color",
+      .persist_key = SETTING_KEY_BG_COLOR,
+      .type = WatchfaceSettingType_Color,
+      .default_color = { .argb = GColorBlackARGB8 },
+    },
+    {
+      .name = "Text Color",
+      .persist_key = SETTING_KEY_TEXT_COLOR,
+      .type = WatchfaceSettingType_Color,
+      .default_color = { .argb = GColorWhiteARGB8 },
+    },
+  };
+  watchface_settings_declare(settings, ARRAY_LENGTH(settings));
+
+  // Read persisted colors (or use defaults)
+  GColor8 color_val;
+  if (persist_exists(SETTING_KEY_BG_COLOR) &&
+      persist_read_data(SETTING_KEY_BG_COLOR, &color_val, sizeof(color_val)) == sizeof(color_val)) {
+    data->bg_color = (GColor) { .argb = color_val.argb };
+  } else {
+    data->bg_color = GColorBlack;
+  }
+  if (persist_exists(SETTING_KEY_TEXT_COLOR) &&
+      persist_read_data(SETTING_KEY_TEXT_COLOR, &color_val, sizeof(color_val)) == sizeof(color_val)) {
+    data->text_color = (GColor) { .argb = color_val.argb };
+  } else {
+    data->text_color = GColorWhite;
+  }
+
   window_init(&data->window, WINDOW_NAME("TicToc"));
-  window_set_background_color(&data->window, GColorBlack);
+  window_set_background_color(&data->window, data->bg_color);
 
   text_layer_init(&data->text_date_layer, &GRect(8, 68, DISP_COLS - 8, DISP_ROWS - 68));
-  text_layer_set_text_color(&data->text_date_layer, GColorWhite);
+  text_layer_set_text_color(&data->text_date_layer, data->text_color);
   text_layer_set_background_color(&data->text_date_layer, GColorClear);
   text_layer_set_font(&data->text_date_layer, fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21));
   layer_add_child(&data->window.layer, &data->text_date_layer.layer);
 
   text_layer_init(&data->text_time_layer, &GRect(7, 92, DISP_COLS - 7, DISP_ROWS - 92));
-  text_layer_set_text_color(&data->text_time_layer, GColorWhite);
+  text_layer_set_text_color(&data->text_time_layer, data->text_color);
   text_layer_set_background_color(&data->text_time_layer, GColorClear);
   text_layer_set_font(&data->text_time_layer,
                       fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49));

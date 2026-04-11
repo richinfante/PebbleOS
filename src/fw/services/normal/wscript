@@ -173,3 +173,10 @@ def build(bld):
         target='services_normal_wakeup',
     )
     bld.env.SERVICES.append('services_normal_wakeup')
+
+    bld.stlib(
+        use=['fw_includes'],
+        source=['watchface_settings_service.c'],
+        target='services_normal_watchface_settings_service',
+    )
+    bld.env.SERVICES.append('services_normal_watchface_settings_service')

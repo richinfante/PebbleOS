@@ -30,6 +30,7 @@
 #include "services/normal/activity/activity.h"
 #include "services/normal/app_glances/app_glance_service.h"
 
+#include "applib/watchface_settings.h"
 #include "process_management/pebble_process_info.h"
 
 #include "util/attributes.h"

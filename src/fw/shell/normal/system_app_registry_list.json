@@ -78,6 +78,12 @@
       "color_argb8": "GColorJazzberryJamARGB8"
     },
     {
+      "id": -100,
+      "enum": "WF_SETTINGS",
+      "md_fn": "watchface_settings_app_get_info",
+      "color_argb8": "GColorVividCeruleanARGB8"
+    },
+    {
       "id": -9,
       "enum": "QUICK_LAUNCH_SETUP",
       "md_fn": "quick_launch_setup_get_app_info"

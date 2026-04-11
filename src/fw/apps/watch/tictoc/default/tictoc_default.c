@@ -3,14 +3,21 @@
 
 #include "applib/app.h"
 #include "applib/app_focus_service.h"
+#include "applib/persist.h"
 #include "applib/tick_timer_service.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/ui.h"
 #include "applib/unobstructed_area_service.h"
+#include "applib/watchface_settings.h"
 #include "kernel/pbl_malloc.h"
 #include "process_state/app_state/app_state.h"
+#include "util/size.h"
 #include "util/time/time.h"
 #include "util/trig.h"
+
+// Persist keys for watchface settings
+#define SETTING_KEY_BG_COLOR     1
+#define SETTING_KEY_HAND_COLOR   2
 
 #if PBL_ROUND
 static const int MINUTE_HAND_MARGIN = 16;
@@ -31,6 +38,8 @@ typedef struct {
   Window window;
   Layer canvas_layer;
   Time last_time;
+  GColor bg_color;
+  GColor hand_color;
 } TicTocData;
 
 static void prv_minute_tick_handler(struct tm *tick_time, TimeUnits changed) {
@@ -57,7 +66,7 @@ static void prv_canvas_layer_update_proc(Layer *layer, GContext *ctx) {
   TicTocData *data = app_state_get_user_data();
 
   const GRect *bounds = &layer->bounds;
-  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_context_set_fill_color(ctx, data->bg_color);
   graphics_context_set_stroke_width(ctx, STROKE_WIDTH);
   graphics_context_set_antialiased(ctx, true);
 
@@ -101,10 +110,10 @@ static void prv_canvas_layer_update_proc(Layer *layer, GContext *ctx) {
   }
 
   if (clock_radius > HOUR_HAND_MARGIN) {
-    graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorRed, GColorWhite));
+    graphics_context_set_stroke_color(ctx, data->hand_color);
     graphics_draw_line(ctx, center, hour_hand);
     // fill a circle to make a cleaner center
-    graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorRed, GColorWhite));
+    graphics_context_set_fill_color(ctx, data->hand_color);
     graphics_fill_circle(ctx, center, STROKE_WIDTH / 2);
   }
 
@@ -131,6 +140,38 @@ static void prv_window_load(Window *window) {
 static void prv_init() {
   TicTocData *data = app_zalloc_check(sizeof(TicTocData));
   app_state_set_user_data(data);
+
+  // Declare watchface settings
+  const WatchfaceSetting settings[] = {
+    {
+      .name = "Background Color",
+      .persist_key = SETTING_KEY_BG_COLOR,
+      .type = WatchfaceSettingType_Color,
+      .default_color = { .argb = GColorBlackARGB8 },
+    },
+    {
+      .name = "Hour Hand Color",
+      .persist_key = SETTING_KEY_HAND_COLOR,
+      .type = WatchfaceSettingType_Color,
+      .default_color = { .argb = PBL_IF_COLOR_ELSE(GColorRedARGB8, GColorWhiteARGB8) },
+    },
+  };
+  watchface_settings_declare(settings, ARRAY_LENGTH(settings));
+
+  // Read persisted colors (or use defaults)
+  GColor8 color_val;
+  if (persist_exists(SETTING_KEY_BG_COLOR) &&
+      persist_read_data(SETTING_KEY_BG_COLOR, &color_val, sizeof(color_val)) == sizeof(color_val)) {
+    data->bg_color = (GColor) { .argb = color_val.argb };
+  } else {
+    data->bg_color = GColorBlack;
+  }
+  if (persist_exists(SETTING_KEY_HAND_COLOR) &&
+      persist_read_data(SETTING_KEY_HAND_COLOR, &color_val, sizeof(color_val)) == sizeof(color_val)) {
+    data->hand_color = (GColor) { .argb = color_val.argb };
+  } else {
+    data->hand_color = PBL_IF_COLOR_ELSE(GColorRed, GColorWhite);
+  }
 
   window_init(&data->window, WINDOW_NAME("TicToc"));
   window_set_window_handlers(&data->window, &(WindowHandlers) {
