@@ -54,6 +54,7 @@
 #include "stubs_task.h"
 #include "stubs_tick.h"
 #include "stubs_timeline_peek.h"
+#include "stubs_watchface_settings.h"
 #include "stubs_worker_manager.h"
 
 // Fake "Apps"
@@ -75,7 +76,7 @@ static PebbleProcessMdSystem s_root_app = {
 };
 
 static PebbleProcessMdSystem s_third_party_app = {
-  .name = "Third Party App", 
+  .name = "Third Party App",
   .common = {
     .is_unprivileged = true,
     // UUID: 04c52401-4dbe-408b-b73a-0e80ef09af74

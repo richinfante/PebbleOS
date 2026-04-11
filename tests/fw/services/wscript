@@ -481,4 +481,11 @@ def build(ctx):
          test_sources_ant_glob="test_app_glance_service.c",
          override_includes=['dummy_board'])
 
+    clar(ctx,
+         sources_ant_glob=(
+             " src/fw/services/normal/watchface_settings_service.c"
+         ),
+         test_sources_ant_glob="test_watchface_settings_service.c",
+         override_includes=['dummy_board'])
+
 # vim:filetype=python
