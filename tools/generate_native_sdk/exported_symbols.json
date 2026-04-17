@@ -4,7 +4,7 @@
               "You should also make sure you are obeying our API design guidelines:",
               "https://pebbletechnology.atlassian.net/wiki/display/DEV/SDK+API+Design+Guidelines"
             ],
-  "revision" : "93",
+  "revision" : "94",
   "version" : "2.0",
   "files": [
     "fw/drivers/ambient_light.h",
@@ -57,6 +57,7 @@
     "fw/applib/pbl_std/pbl_std.h",
     "fw/applib/pbl_std/locale.h",
     "fw/applib/persist.h",
+    "fw/applib/watchface_settings.h",
     "fw/applib/worker.h",
     "libutil/includes/util/uuid.h",
     "fw/process_management/app_manager.h",
@@ -4752,6 +4753,46 @@
       "implName": "pbl_localeconv_r",
       "addedRevision": "27"
 
+    }, {
+      "type": "group",
+      "name": "WatchfaceSettings",
+      "appOnly": true,
+      "exports": [
+        {
+          "type": "define",
+          "name": "WATCHFACE_SETTINGS_MAX",
+          "addedRevision": "94"
+        }, {
+          "type": "define",
+          "name": "WATCHFACE_SETTING_NAME_MAX",
+          "addedRevision": "94"
+        }, {
+          "type": "type",
+          "name": "WatchfaceSettingType",
+          "addedRevision": "94"
+        }, {
+          "type": "type",
+          "name": "WatchfaceSettingColorPalette",
+          "addedRevision": "94"
+        }, {
+          "type": "type",
+          "name": "WatchfaceSettingColorConfig",
+          "addedRevision": "94"
+        }, {
+          "type": "type",
+          "name": "WatchfaceSettingNumberConfig",
+          "addedRevision": "94"
+        }, {
+          "type": "type",
+          "name": "WatchfaceSetting",
+          "addedRevision": "94"
+        }, {
+          "type": "function",
+          "name": "watchface_settings_declare",
+          "addedRevision": "94",
+          "stubReturn": "void"
+        }
+      ]
     }
   ],
   "fonts": [
